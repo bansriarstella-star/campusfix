@@ -1,0 +1,570 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Helpers
+    // -------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'bansriarstella@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isProviderFor(providerId) {
+      return isVerifiedUser() &&
+        exists(/databases/$(database)/documents/providerAccounts/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/providerAccounts/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/providerAccounts/$(request.auth.uid)).data.providerId == providerId;
+    }
+
+    function isValidCategory(category) {
+      return category in ['laundry', 'repairs', 'printing', 'housekeeping'];
+    }
+
+    function isValidBookingStatus(status) {
+      return status in ['Requested', 'Accepted', 'In Progress', 'Completed', 'Rejected', 'Cancelled'];
+    }
+
+    function isOptionalTimestamp(val) {
+      return val == null || val is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidUser(data) {
+      return data.keys().hasAll([
+        'uid', 'displayName', 'email', 'photoURL', 'role',
+        'providerId', 'hostelBuilding', 'roomNumber', 'phone',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'displayName', 'email', 'photoURL', 'role',
+        'providerId', 'hostelBuilding', 'roomNumber', 'phone',
+        'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+      data.photoURL is string && data.photoURL.size() <= 500 &&
+      data.role in ['student', 'provider', 'admin'] &&
+      data.providerId is string && data.providerId.size() <= 128 &&
+      data.hostelBuilding is string && data.hostelBuilding.size() <= 100 &&
+      data.roomNumber is string && data.roomNumber.size() <= 50 &&
+      data.phone is string && data.phone.size() <= 30 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAdminMarker(data) {
+      return data.keys().hasAll(['uid', 'email', 'addedAt']) &&
+      data.keys().hasOnly(['uid', 'email', 'addedAt']) &&
+      isValidId(data.uid) &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+      data.addedAt is timestamp;
+    }
+
+    function isValidProviderAccount(data) {
+      return data.keys().hasAll([
+        'uid', 'providerId', 'providerName', 'email', 'active', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'providerId', 'providerName', 'email', 'active', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      isValidId(data.providerId) &&
+      data.providerName is string && data.providerName.size() >= 2 && data.providerName.size() <= 120 &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+      data.active is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidProvider(data) {
+      return data.keys().hasAll([
+        'id', 'name', 'category', 'tagline', 'areaServed',
+        'availableWindows', 'active', 'isDemoExample',
+        'ratingAvg', 'reviewCount', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'name', 'category', 'tagline', 'areaServed',
+        'availableWindows', 'active', 'isDemoExample',
+        'ratingAvg', 'reviewCount', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.name is string && data.name.size() >= 2 && data.name.size() <= 120 &&
+      isValidCategory(data.category) &&
+      data.tagline is string && data.tagline.size() >= 2 && data.tagline.size() <= 180 &&
+      data.areaServed is string && data.areaServed.size() >= 2 && data.areaServed.size() <= 120 &&
+      data.availableWindows is list && data.availableWindows.size() >= 1 && data.availableWindows.size() <= 10 &&
+      data.availableWindows[0] is string && data.availableWindows[0].size() >= 3 && data.availableWindows[0].size() <= 60 &&
+      data.active is bool &&
+      data.isDemoExample is bool &&
+      data.ratingAvg is number && data.ratingAvg >= 0 && data.ratingAvg <= 5 &&
+      data.reviewCount is number && data.reviewCount >= 0 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidProviderPrivate(data) {
+      return data.keys().hasAll([
+        'providerId', 'assignedUid', 'accountEmail', 'contactPhone', 'internalNotes', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'providerId', 'assignedUid', 'accountEmail', 'contactPhone', 'internalNotes', 'updatedAt'
+      ]) &&
+      isValidId(data.providerId) &&
+      data.assignedUid is string && data.assignedUid.size() <= 128 &&
+      data.accountEmail is string && data.accountEmail.size() <= 150 &&
+      data.contactPhone is string && data.contactPhone.size() <= 40 &&
+      data.internalNotes is string && data.internalNotes.size() <= 500 &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidService(data) {
+      return data.keys().hasAll([
+        'id', 'providerId', 'providerName', 'category', 'title', 'description',
+        'priceBasis', 'estimatedMinInr', 'estimatedMaxInr', 'turnaroundText',
+        'availableWindows', 'active', 'isDemoExample', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'providerId', 'providerName', 'category', 'title', 'description',
+        'priceBasis', 'estimatedMinInr', 'estimatedMaxInr', 'turnaroundText',
+        'availableWindows', 'active', 'isDemoExample', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      isValidId(data.providerId) &&
+      data.providerName is string && data.providerName.size() >= 2 && data.providerName.size() <= 120 &&
+      isValidCategory(data.category) &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+      data.description is string && data.description.size() >= 10 && data.description.size() <= 600 &&
+      data.priceBasis is string && data.priceBasis.size() >= 2 && data.priceBasis.size() <= 120 &&
+      data.estimatedMinInr is number && data.estimatedMinInr >= 0 && data.estimatedMinInr <= 100000 &&
+      data.estimatedMaxInr is number && data.estimatedMaxInr >= data.estimatedMinInr && data.estimatedMaxInr <= 100000 &&
+      data.turnaroundText is string && data.turnaroundText.size() >= 2 && data.turnaroundText.size() <= 80 &&
+      data.availableWindows is list && data.availableWindows.size() >= 1 && data.availableWindows.size() <= 10 &&
+      data.availableWindows[0] is string && data.availableWindows[0].size() >= 3 && data.availableWindows[0].size() <= 60 &&
+      data.active is bool &&
+      data.isDemoExample is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll([
+        'id', 'referenceCode', 'studentUid', 'studentName', 'studentEmail',
+        'category', 'serviceId', 'serviceTitle', 'providerId', 'providerName',
+        'priceBasisSnapshot', 'estimatedMinInr', 'estimatedMaxInr',
+        'scheduledDate', 'timeWindow', 'building', 'roomOrPickupPoint', 'instructions',
+        'printingDescription', 'printingPageCount', 'printingColor',
+        'status', 'statusNote', 'cancellationReason', 'reviewSubmitted',
+        'createdAt', 'updatedAt', 'acceptedAt', 'inProgressAt', 'completedAt', 'rejectedAt', 'cancelledAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'referenceCode', 'studentUid', 'studentName', 'studentEmail',
+        'category', 'serviceId', 'serviceTitle', 'providerId', 'providerName',
+        'priceBasisSnapshot', 'estimatedMinInr', 'estimatedMaxInr',
+        'scheduledDate', 'timeWindow', 'building', 'roomOrPickupPoint', 'instructions',
+        'printingDescription', 'printingPageCount', 'printingColor',
+        'status', 'statusNote', 'cancellationReason', 'reviewSubmitted',
+        'createdAt', 'updatedAt', 'acceptedAt', 'inProgressAt', 'completedAt', 'rejectedAt', 'cancelledAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.referenceCode is string && data.referenceCode.size() >= 6 && data.referenceCode.size() <= 24 &&
+      data.referenceCode.matches('^CF-[0-9]{4}-[A-Z0-9]{4,8}$') &&
+      isValidId(data.studentUid) &&
+      data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+      data.studentEmail is string && data.studentEmail.size() >= 3 && data.studentEmail.size() <= 150 &&
+      isValidCategory(data.category) &&
+      isValidId(data.serviceId) &&
+      data.serviceTitle is string && data.serviceTitle.size() >= 2 && data.serviceTitle.size() <= 120 &&
+      isValidId(data.providerId) &&
+      data.providerName is string && data.providerName.size() >= 2 && data.providerName.size() <= 120 &&
+      data.priceBasisSnapshot is string && data.priceBasisSnapshot.size() >= 2 && data.priceBasisSnapshot.size() <= 120 &&
+      data.estimatedMinInr is number && data.estimatedMinInr >= 0 && data.estimatedMinInr <= 100000 &&
+      data.estimatedMaxInr is number && data.estimatedMaxInr >= data.estimatedMinInr && data.estimatedMaxInr <= 100000 &&
+      data.scheduledDate is string && data.scheduledDate.size() == 10 &&
+      data.scheduledDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+      data.timeWindow is string && data.timeWindow.size() >= 3 && data.timeWindow.size() <= 60 &&
+      data.building is string && data.building.size() >= 2 && data.building.size() <= 120 &&
+      data.roomOrPickupPoint is string && data.roomOrPickupPoint.size() >= 1 && data.roomOrPickupPoint.size() <= 100 &&
+      data.instructions is string && data.instructions.size() <= 600 &&
+      data.printingDescription is string && data.printingDescription.size() <= 300 &&
+      data.printingPageCount is number && data.printingPageCount >= 0 && data.printingPageCount <= 5000 &&
+      data.printingColor in ['none', 'bw', 'color'] &&
+      isValidBookingStatus(data.status) &&
+      data.statusNote is string && data.statusNote.size() <= 300 &&
+      data.cancellationReason is string && data.cancellationReason.size() <= 300 &&
+      data.reviewSubmitted is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp &&
+      isOptionalTimestamp(data.acceptedAt) &&
+      isOptionalTimestamp(data.inProgressAt) &&
+      isOptionalTimestamp(data.completedAt) &&
+      isOptionalTimestamp(data.rejectedAt) &&
+      isOptionalTimestamp(data.cancelledAt);
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll([
+        'id', 'bookingId', 'studentUid', 'studentName',
+        'providerId', 'serviceId', 'rating', 'comment', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'bookingId', 'studentUid', 'studentName',
+        'providerId', 'serviceId', 'rating', 'comment', 'createdAt'
+      ]) &&
+      isValidId(data.id) &&
+      isValidId(data.bookingId) &&
+      isValidId(data.studentUid) &&
+      data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+      isValidId(data.providerId) &&
+      isValidId(data.serviceId) &&
+      data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+      data.comment is string && data.comment.size() <= 500 &&
+      data.createdAt is timestamp;
+    }
+
+    function bookingImmutableFieldsPreserved() {
+      return incoming().id == existing().id &&
+        incoming().referenceCode == existing().referenceCode &&
+        incoming().studentUid == existing().studentUid &&
+        incoming().studentName == existing().studentName &&
+        incoming().studentEmail == existing().studentEmail &&
+        incoming().category == existing().category &&
+        incoming().serviceId == existing().serviceId &&
+        incoming().serviceTitle == existing().serviceTitle &&
+        incoming().providerId == existing().providerId &&
+        incoming().providerName == existing().providerName &&
+        incoming().priceBasisSnapshot == existing().priceBasisSnapshot &&
+        incoming().estimatedMinInr == existing().estimatedMinInr &&
+        incoming().estimatedMaxInr == existing().estimatedMaxInr &&
+        incoming().scheduledDate == existing().scheduledDate &&
+        incoming().timeWindow == existing().timeWindow &&
+        incoming().building == existing().building &&
+        incoming().roomOrPickupPoint == existing().roomOrPickupPoint &&
+        incoming().instructions == existing().instructions &&
+        incoming().printingDescription == existing().printingDescription &&
+        incoming().printingPageCount == existing().printingPageCount &&
+        incoming().printingColor == existing().printingColor &&
+        incoming().createdAt == existing().createdAt;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isOwner(userId) &&
+        isValidUser(incoming()) &&
+        incoming().uid == userId &&
+        incoming().email == request.auth.token.email &&
+        (incoming().role == 'student' || isBootstrappedAdmin()) &&
+        incoming().providerId == '' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUser(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().email == existing().email &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'role', 'providerId', 'displayName', 'hostelBuilding', 'roomNumber', 'phone', 'updatedAt'
+            ])
+          ) ||
+          (
+            isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().providerId == existing().providerId &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'photoURL', 'hostelBuilding', 'roomNumber', 'phone', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if false;
+    }
+
+    match /admins/{adminUid} {
+      allow get: if isOwner(adminUid) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(adminUid) &&
+        isValidAdminMarker(incoming()) &&
+        incoming().uid == adminUid &&
+        incoming().addedAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(adminUid);
+    }
+
+    match /providerAccounts/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(userId) &&
+        isValidProviderAccount(incoming()) &&
+        incoming().uid == userId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/providers/$(incoming().providerId));
+      allow update: if isAdmin() &&
+        isValidId(userId) &&
+        isValidProviderAccount(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'providerId', 'providerName', 'email', 'active', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /providers/{providerId} {
+      allow get: if (isValidId(providerId) && resource.data.active == true) || isAdmin();
+      allow list: if resource.data.active == true || isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(providerId) &&
+        isValidProvider(incoming()) &&
+        incoming().id == providerId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(providerId) &&
+        isValidProvider(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'category', 'tagline', 'areaServed', 'availableWindows',
+          'active', 'isDemoExample', 'ratingAvg', 'reviewCount', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(providerId);
+    }
+
+    match /providerPrivate/{providerId} {
+      allow get: if isValidId(providerId) && (isAdmin() || isProviderFor(providerId));
+      allow list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(providerId) &&
+        isValidProviderPrivate(incoming()) &&
+        incoming().providerId == providerId &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(providerId) &&
+        isValidProviderPrivate(incoming()) &&
+        incoming().providerId == existing().providerId &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'assignedUid', 'accountEmail', 'contactPhone', 'internalNotes', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(providerId);
+    }
+
+    match /services/{serviceId} {
+      allow get: if (isValidId(serviceId) && resource.data.active == true) || isAdmin();
+      allow list: if resource.data.active == true || isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(serviceId) &&
+        isValidService(incoming()) &&
+        incoming().id == serviceId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/providers/$(incoming().providerId));
+      allow update: if isAdmin() &&
+        isValidId(serviceId) &&
+        isValidService(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'providerId', 'providerName', 'category', 'title', 'description',
+          'priceBasis', 'estimatedMinInr', 'estimatedMaxInr', 'turnaroundText',
+          'availableWindows', 'active', 'isDemoExample', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(serviceId);
+    }
+
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && isSignedIn() && (
+        resource.data.studentUid == request.auth.uid ||
+        isAdmin() ||
+        isProviderFor(resource.data.providerId)
+      );
+      allow list: if isSignedIn() && (
+        resource.data.studentUid == request.auth.uid ||
+        isAdmin() ||
+        isProviderFor(resource.data.providerId)
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(bookingId) &&
+        isValidBooking(incoming()) &&
+        incoming().id == bookingId &&
+        incoming().studentUid == request.auth.uid &&
+        incoming().status == 'Requested' &&
+        incoming().statusNote == '' &&
+        incoming().cancellationReason == '' &&
+        incoming().reviewSubmitted == false &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        incoming().acceptedAt == null &&
+        incoming().inProgressAt == null &&
+        incoming().completedAt == null &&
+        incoming().rejectedAt == null &&
+        incoming().cancelledAt == null &&
+        exists(/databases/$(database)/documents/services/$(incoming().serviceId)) &&
+        get(/databases/$(database)/documents/services/$(incoming().serviceId)).data.active == true &&
+        get(/databases/$(database)/documents/services/$(incoming().serviceId)).data.providerId == incoming().providerId &&
+        get(/databases/$(database)/documents/services/$(incoming().serviceId)).data.category == incoming().category &&
+        get(/databases/$(database)/documents/services/$(incoming().serviceId)).data.priceBasis == incoming().priceBasisSnapshot &&
+        get(/databases/$(database)/documents/services/$(incoming().serviceId)).data.estimatedMinInr == incoming().estimatedMinInr &&
+        get(/databases/$(database)/documents/services/$(incoming().serviceId)).data.estimatedMaxInr == incoming().estimatedMaxInr &&
+        exists(/databases/$(database)/documents/providers/$(incoming().providerId)) &&
+        get(/databases/$(database)/documents/providers/$(incoming().providerId)).data.active == true;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(bookingId) &&
+        isValidBooking(incoming()) &&
+        bookingImmutableFieldsPreserved() &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Owning student cancels ONLY before In Progress
+          (
+            isOwner(existing().studentUid) &&
+            existing().status in ['Requested', 'Accepted'] &&
+            incoming().status == 'Cancelled' &&
+            incoming().cancelledAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'cancellationReason', 'cancelledAt', 'updatedAt'
+            ])
+          ) ||
+          // Action 2: Owning student marks reviewSubmitted atomically when creating review
+          (
+            isOwner(existing().studentUid) &&
+            existing().status == 'Completed' &&
+            existing().reviewSubmitted == false &&
+            incoming().reviewSubmitted == true &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'reviewSubmitted', 'updatedAt'
+            ]) &&
+            existsAfter(/databases/$(database)/documents/reviews/$(bookingId))
+          ) ||
+          // Action 3a: Assigned provider accepts Requested -> Accepted
+          (
+            isProviderFor(existing().providerId) &&
+            existing().status == 'Requested' &&
+            incoming().status == 'Accepted' &&
+            incoming().acceptedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'statusNote', 'acceptedAt', 'updatedAt'
+            ])
+          ) ||
+          // Action 3b: Assigned provider rejects Requested -> Rejected
+          (
+            isProviderFor(existing().providerId) &&
+            existing().status == 'Requested' &&
+            incoming().status == 'Rejected' &&
+            incoming().rejectedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'statusNote', 'rejectedAt', 'updatedAt'
+            ])
+          ) ||
+          // Action 3c: Assigned provider starts Accepted -> In Progress
+          (
+            isProviderFor(existing().providerId) &&
+            existing().status == 'Accepted' &&
+            incoming().status == 'In Progress' &&
+            incoming().inProgressAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'statusNote', 'inProgressAt', 'updatedAt'
+            ])
+          ) ||
+          // Action 3d: Assigned provider completes In Progress -> Completed
+          (
+            isProviderFor(existing().providerId) &&
+            existing().status == 'In Progress' &&
+            incoming().status == 'Completed' &&
+            incoming().completedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'statusNote', 'completedAt', 'updatedAt'
+            ])
+          ) ||
+          // Action 4: Admin override
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'statusNote', 'cancellationReason',
+              'acceptedAt', 'inProgressAt', 'completedAt', 'rejectedAt', 'cancelledAt', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    match /reviews/{reviewId} {
+      allow get: if (isValidId(reviewId) && resource.data.rating >= 1) || isAdmin();
+      allow list: if resource.data.rating >= 1 || isAdmin();
+      allow create: if isVerifiedUser() &&
+        isValidId(reviewId) &&
+        isValidReview(incoming()) &&
+        incoming().id == reviewId &&
+        incoming().bookingId == reviewId &&
+        incoming().studentUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/bookings/$(reviewId)) &&
+        get(/databases/$(database)/documents/bookings/$(reviewId)).data.studentUid == request.auth.uid &&
+        get(/databases/$(database)/documents/bookings/$(reviewId)).data.status == 'Completed' &&
+        get(/databases/$(database)/documents/bookings/$(reviewId)).data.reviewSubmitted == false &&
+        get(/databases/$(database)/documents/bookings/$(reviewId)).data.providerId == incoming().providerId &&
+        get(/databases/$(database)/documents/bookings/$(reviewId)).data.serviceId == incoming().serviceId &&
+        getAfter(/databases/$(database)/documents/bookings/$(reviewId)).data.reviewSubmitted == true;
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(reviewId);
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "CampusFix",
+  "description": "Student venture prototype for DBS Global University hostel and nearby PG students in Dehradun to request, track, and review everyday campus services.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
