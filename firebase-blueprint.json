@@ -161,7 +161,17 @@
         },
         "category": {
           "type": "string",
-          "enum": ["laundry", "repairs", "printing", "housekeeping"]
+          "enum": [
+            "laundry",
+            "plumbing",
+            "electrical",
+            "housekeeping",
+            "printing",
+            "tech_repairs",
+            "delivery",
+            "personal_care",
+            "repairs"
+          ]
         },
         "tagline": {
           "type": "string",
@@ -277,7 +287,17 @@
         },
         "category": {
           "type": "string",
-          "enum": ["laundry", "repairs", "printing", "housekeeping"]
+          "enum": [
+            "laundry",
+            "plumbing",
+            "electrical",
+            "housekeeping",
+            "printing",
+            "tech_repairs",
+            "delivery",
+            "personal_care",
+            "repairs"
+          ]
         },
         "title": {
           "type": "string",
@@ -377,7 +397,17 @@
         },
         "category": {
           "type": "string",
-          "enum": ["laundry", "repairs", "printing", "housekeeping"]
+          "enum": [
+            "laundry",
+            "plumbing",
+            "electrical",
+            "housekeeping",
+            "printing",
+            "tech_repairs",
+            "delivery",
+            "personal_care",
+            "repairs"
+          ]
         },
         "serviceId": {
           "type": "string",

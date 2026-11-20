@@ -1,6 +1,17 @@
 import type { Timestamp } from 'firebase/firestore';
 
-export type ServiceCategory = 'laundry' | 'repairs' | 'printing' | 'housekeeping';
+export type ServiceCategory =
+  | 'laundry'
+  | 'plumbing'
+  | 'electrical'
+  | 'housekeeping'
+  | 'printing'
+  | 'tech_repairs'
+  | 'delivery'
+  | 'personal_care'
+  | 'repairs';
+
+export type PrimaryServiceCategory = Exclude<ServiceCategory, 'repairs'>;
 
 export type BookingStatus =
   | 'Requested'
@@ -14,6 +25,17 @@ export type UserRole = 'student' | 'provider' | 'admin';
 
 export type PrintingColorOption = 'none' | 'bw' | 'color';
 
+export const PRIMARY_CATEGORIES: PrimaryServiceCategory[] = [
+  'laundry',
+  'plumbing',
+  'electrical',
+  'housekeeping',
+  'printing',
+  'tech_repairs',
+  'delivery',
+  'personal_care',
+];
+
 export const CATEGORY_META: Record<
   ServiceCategory,
   {
@@ -26,31 +48,66 @@ export const CATEGORY_META: Record<
 > = {
   laundry: {
     id: 'laundry',
-    label: 'Laundry & Ironing',
+    label: 'Laundry & Dry Cleaning',
     shortLabel: 'Laundry',
-    summary: 'Hostel pickup and return for daily wear, bedsheets, and steam pressing.',
-    exampleScope: 'Demo rates around ₹75–₹110 per kg',
+    summary: 'Wash & fold, bedsheets, stain care, and steam pressing for hostel rooms.',
+    exampleScope: 'Illustrative from ₹75 / kg',
+  },
+  plumbing: {
+    id: 'plumbing',
+    label: 'Plumbing Services',
+    shortLabel: 'Plumbing',
+    summary: 'Dripping taps, blocked washbasins, flush valves, and bathroom fittings.',
+    exampleScope: 'Illustrative from ₹149 / visit',
+  },
+  electrical: {
+    id: 'electrical',
+    label: 'Electrical Repairs',
+    shortLabel: 'Electrical',
+    summary: 'Ceiling fans, switches, power sockets, tube lights, and MCB checks.',
+    exampleScope: 'Illustrative from ₹129 / visit',
+  },
+  housekeeping: {
+    id: 'housekeeping',
+    label: 'Housekeeping & Cleaning',
+    shortLabel: 'Housekeeping',
+    summary: 'Room sweeping, disinfectant mopping, desk wipe-down, and bath cleaning.',
+    exampleScope: 'Illustrative from ₹120 / visit',
+  },
+  printing: {
+    id: 'printing',
+    label: 'Printing & Photocopying',
+    shortLabel: 'Printing',
+    summary: 'A4 B&W or colour prints, lecture packets, photocopying, and spiral binding.',
+    exampleScope: 'Illustrative from ₹2 / page',
+  },
+  tech_repairs: {
+    id: 'tech_repairs',
+    label: 'Laptop & Mobile Repairs',
+    shortLabel: 'Tech Repairs',
+    summary: 'Charging port cleaning, screen/battery checks, and OS troubleshooting.',
+    exampleScope: 'Illustrative from ₹199 / check',
+  },
+  delivery: {
+    id: 'delivery',
+    label: 'Food & Grocery Delivery',
+    shortLabel: 'Delivery',
+    summary: 'Campus-gate tiffin pickup, drinking water, snacks, and daily essentials.',
+    exampleScope: 'Illustrative from ₹30 / drop',
+  },
+  personal_care: {
+    id: 'personal_care',
+    label: 'Beauty & Personal Care',
+    shortLabel: 'Personal Care',
+    summary: 'Scheduled haircuts, beard trims, and basic personal grooming near campus.',
+    exampleScope: 'Illustrative from ₹149 / visit',
   },
   repairs: {
     id: 'repairs',
     label: 'Electrical & Plumbing',
     shortLabel: 'Repairs',
     summary: 'Room fans, sockets, switches, taps, flush valves, and minor sink leaks.',
-    exampleScope: 'Demo visit fee ₹150–₹180 + parts',
-  },
-  printing: {
-    id: 'printing',
-    label: 'Printing & Binding',
-    shortLabel: 'Printing',
-    summary: 'Lecture notes, assignments, B&W or colour prints, and spiral binding.',
-    exampleScope: 'Demo rates from ₹2 / B&W page',
-  },
-  housekeeping: {
-    id: 'housekeeping',
-    label: 'Housekeeping',
-    shortLabel: 'Housekeeping',
-    summary: 'Hostel room sweeping, mopping, desk wipe-down, and washroom sanitizing.',
-    exampleScope: 'Demo visits ₹120–₹220 per session',
+    exampleScope: 'Illustrative from ₹129 / visit',
   },
 };
 
@@ -161,6 +218,13 @@ export interface ServiceCatalogItem {
   updatedAt: Timestamp | null;
 }
 
+export interface RichServiceItem extends ServiceCatalogItem {
+  startingPriceLabel: string;
+  areaServed: string;
+  highlights: string[];
+  source: 'firestore' | 'sample';
+}
+
 export interface BookingRequest {
   id: string;
   referenceCode: string;
@@ -194,6 +258,29 @@ export interface BookingRequest {
   completedAt: Timestamp | null;
   rejectedAt: Timestamp | null;
   cancelledAt: Timestamp | null;
+}
+
+export interface LocalSampleBooking {
+  id: string;
+  referenceCode: string;
+  studentName: string;
+  studentEmail: string;
+  studentPhone: string;
+  category: ServiceCategory;
+  serviceId: string;
+  serviceTitle: string;
+  priceBasisSnapshot: string;
+  scheduledDate: string;
+  timeWindow: string;
+  building: string;
+  roomOrPickupPoint: string;
+  instructions: string;
+  printingDescription: string;
+  printingPageCount: number;
+  printingColor: PrintingColorOption;
+  status: 'Requested' | 'Cancelled';
+  createdAtIso: string;
+  isIllustrativeSample: true;
 }
 
 export interface ServiceReview {

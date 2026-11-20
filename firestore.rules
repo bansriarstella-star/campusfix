@@ -53,7 +53,17 @@ service cloud.firestore {
     }
 
     function isValidCategory(category) {
-      return category in ['laundry', 'repairs', 'printing', 'housekeeping'];
+      return category in [
+        'laundry',
+        'plumbing',
+        'electrical',
+        'housekeeping',
+        'printing',
+        'tech_repairs',
+        'delivery',
+        'personal_care',
+        'repairs'
+      ];
     }
 
     function isValidBookingStatus(status) {
